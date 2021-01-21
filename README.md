@@ -1,7 +1,7 @@
 # dbpartition-tools
 Tools to use DBPartition in Liferay
 
-## dbpartition-tools.jar
+## migrate-to-dbpartition.jar
 This tool migrates your companies from a regular environment to a DB Partition environment. It creates one schema per company except the default one. Aftert that, you can startup your server with db partition enabled.
 
 - Requirements:
@@ -11,5 +11,5 @@ This tool migrates your companies from a regular environment to a DB Partition e
 
 - Example of usage:
 ```
-java -jar dbpartition-tools.jar {current_schema_name} {db_user} {db_password}
+java -jar migrate-to-dbpartition.jar {current_schema_name} {db_user} {db_password}
 ```
