@@ -188,7 +188,7 @@ public class MigrateToDBPartition {
 	private static String _defaultSchemaName;
 
 	private static final Set<String> _controlTableNames = new HashSet<>(
-		Arrays.asList("Company", "Portlet", "VirtualHost"));
+		Arrays.asList("Company", "VirtualHost"));
 
 	private static final String JDBC_DRIVER = "com.mysql.cj.jdbc.Driver";
 	private static final String JDBC_URL1 = "jdbc:mysql://localhost/";
