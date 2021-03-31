@@ -13,3 +13,17 @@ This tool migrates your companies from a regular environment to a DB Partition e
 ```
 java -jar migrate-to-dbpartition.jar {current_schema_name} {db_user} {db_password}
 ```
+
+## validate-schemas.jar
+This tool validates DB Partition schemas to be sure that all of them only contains data associated to the proper companyId
+
+- Requirements:
+  - MySQL
+  - Database user with DDL privileges
+
+ - Example of usage (optionally you can add the schema prefix):
+```
+java -jar validate-schemas.jar {current_schema_name} {db_user} {db_password} [{schema_prefix}]
+```
+
+

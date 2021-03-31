@@ -125,7 +125,7 @@ public class MigrateToDBPartition {
 
 		if (_controlTableNames.contains(tableName) ||
 			tableName.startsWith("QUARTZ_") ||
-			!hasColumn(tableName, "companyId")) {
+			!_hasColumn(tableName, "companyId")) {
 
 			return true;
 		}
@@ -133,7 +133,7 @@ public class MigrateToDBPartition {
 		return false;
 	}
 
-	private static boolean hasColumn(String tableName, String columnName)
+	private static boolean _hasColumn(String tableName, String columnName)
 		throws Exception {
 
 		DatabaseMetaData databaseMetaData = _connection.getMetaData();
