@@ -23,7 +23,7 @@ This tool validates DB Partition schemas to be sure that all of them only contai
 
  - Example of usage (optionally you can add the schema prefix):
 ```
-java -jar validate-schemas.jar {current_schema_name} {db_user} {db_password} [{schema_prefix}]
+java -jar validate-schemas.jar {default_schema_name} {db_user} {db_password} [{schema_prefix}]
 ```
 
 
