@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="dbpartition-tools">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/validate-schemas.jar!/" />
+      <root url="jar://$PROJECT_DIR$/migrate-to-dbpartition.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
