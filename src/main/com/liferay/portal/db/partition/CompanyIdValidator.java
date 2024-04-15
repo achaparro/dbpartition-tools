@@ -76,12 +76,12 @@ public class CompanyIdValidator {
 
                     try (ResultSet resultSet2 = preparedStatement.executeQuery()) {
                         while (resultSet2.next()) {
-                            long primaryKey = resultSet2.getLong(primaryKeyName);
+                            Object primaryKey = resultSet2.getObject(primaryKeyName);
                             String column = resultSet2.getString(columnName);
 
                             System.out.println("Found record with companyId on it");
                             System.out.println(tableName);
-                            System.out.println(primaryKeyName + ": " + primaryKey);
+                            System.out.println(primaryKeyName + ": " + primaryKey.toString());
                             System.out.println(columnName + ": " + column);
                         }
                     }
