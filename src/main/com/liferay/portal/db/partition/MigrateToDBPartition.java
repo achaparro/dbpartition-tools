@@ -77,6 +77,8 @@ public class MigrateToDBPartition {
 
 			DatabaseMetaData databaseMetaData = _connection.getMetaData();
 
+			List<Long> companyIds = _getCompanyIds();
+
 			try (ResultSet resultSet = databaseMetaData.getTables(
 				_connection.getCatalog(), _connection.getSchema(), null,
 				new String[]{"TABLE"});
@@ -90,6 +92,17 @@ public class MigrateToDBPartition {
 							_getCreateView(companyId, tableName));
 					}
 					else {
+						if (_isObjectTable(companyIds, tableName)) {
+							if (tableName.contains(String.valueOf(companyId))) {
+								statement.executeUpdate(
+									_getCreateTable(companyId, tableName));
+
+								_moveData(companyId, true, tableName, statement, "");
+							}
+
+							continue;
+						}
+
 						statement.executeUpdate(
 							_getCreateTable(companyId, tableName));
 
@@ -108,18 +121,32 @@ public class MigrateToDBPartition {
 
 		String whereClause = " where companyId = " + companyId;
 
+		_moveData(companyId, false, tableName, statement, whereClause);
+	}
+
+	private static void _moveData(
+		long companyId, boolean removeTable, String tableName, Statement statement, String whereClause)
+		throws Exception {
+
 		statement.executeUpdate(
-			"insert " + _getSchemaName(companyId) + _PERIOD + tableName +
+		 "insert " + _getSchemaName(companyId) + _PERIOD + tableName +
 			" select * from " + _defaultSchemaName + _PERIOD + tableName +
 			whereClause);
 
+		if (removeTable) {
+			statement.executeUpdate(
+			 "drop table if exists " + _defaultSchemaName + _PERIOD +
+				tableName);
+
+			return;
+		}
+
 		if (!whereClause.isEmpty()) {
 			statement.executeUpdate(
-				"delete from " + _defaultSchemaName + _PERIOD + tableName +
-					whereClause);
+			 "delete from " + _defaultSchemaName + _PERIOD + tableName +
+				whereClause);
 		}
 	}
-
 
 	private static boolean _isControlTable(String tableName) {
 
@@ -127,6 +154,19 @@ public class MigrateToDBPartition {
 			tableName.startsWith("QUARTZ_")) {
 
 			return true;
+		}
+
+		return false;
+	}
+
+	private static boolean _isObjectTable(List<Long> companyIds, String tableName) {
+		for (long companyId : companyIds) {
+			if (tableName.endsWith("_x_" + companyId) ||
+					tableName.startsWith("L_" + companyId + "_") ||
+					tableName.startsWith("O_" + companyId + "_")) {
+
+				return true;
+			}
 		}
 
 		return false;
@@ -151,6 +191,21 @@ public class MigrateToDBPartition {
 
 	private static String _getSchemaName(long companyId) {
 		return _SCHEMA_PREFIX + companyId;
+	}
+
+	private static List<Long> _getCompanyIds() throws Exception {
+		try (Statement statement = _connection.createStatement();
+			 ResultSet resultSet = statement.executeQuery(
+					 "select companyId from Company")) {
+
+			List<Long> companyIds = new ArrayList<>();
+
+			while (resultSet.next()) {
+				companyIds.add(resultSet.getLong("companyId"));
+			}
+
+			return companyIds;
+		}
 	}
 
 	private static String _getCreateView(long companyId, String viewName) {
