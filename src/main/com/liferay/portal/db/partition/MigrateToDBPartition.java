@@ -90,24 +90,25 @@ public class MigrateToDBPartition {
 					if (_isControlTable(tableName)) {
 						statement.executeUpdate(
 							_getCreateView(companyId, tableName));
+
+						continue;
 					}
-					else {
-						if (_isObjectTable(companyIds, tableName)) {
-							if (tableName.contains(String.valueOf(companyId))) {
-								statement.executeUpdate(
-									_getCreateTable(companyId, tableName));
 
-								_moveData(companyId, true, tableName, statement, "");
-							}
+					if (_isObjectTable(companyIds, tableName)) {
+						if (tableName.contains(String.valueOf(companyId))) {
+							statement.executeUpdate(
+								_getCreateTable(companyId, tableName));
 
-							continue;
+							_moveData(companyId, true, tableName, statement, "");
 						}
 
-						statement.executeUpdate(
-							_getCreateTable(companyId, tableName));
-
-						_moveCompanyData(companyId, tableName, statement);
+						continue;
 					}
+
+					statement.executeUpdate(
+						_getCreateTable(companyId, tableName));
+
+					_moveCompanyData(companyId, tableName, statement);
 				}
 			}
 
