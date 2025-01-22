@@ -120,7 +120,11 @@ public class MigrateToDBPartition {
 		long companyId, String tableName, Statement statement)
 		throws Exception {
 
-		String whereClause = " where companyId = " + companyId;
+		String whereClause = "";
+
+		if (_hasColumn(tableName, "companyId")) {
+			whereClause = " where companyId = " + companyId;
+		}
 
 		_moveData(companyId, false, tableName, statement, whereClause);
 	}
