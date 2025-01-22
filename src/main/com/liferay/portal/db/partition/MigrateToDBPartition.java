@@ -121,11 +121,10 @@ public class MigrateToDBPartition {
 	}
 
 
-	private static boolean _isControlTable(String tableName) throws Exception {
+	private static boolean _isControlTable(String tableName) {
 
 		if (_controlTableNames.contains(tableName) ||
-			tableName.startsWith("QUARTZ_") ||
-			!_hasColumn(tableName, "companyId")) {
+			tableName.startsWith("QUARTZ_")) {
 
 			return true;
 		}
@@ -188,7 +187,8 @@ public class MigrateToDBPartition {
 	private static String _defaultSchemaName;
 
 	private static final Set<String> _controlTableNames = new HashSet<>(
-		Arrays.asList("Company", "VirtualHost"));
+		Arrays.asList(
+			"Company", "Release_", "ServiceComponent", "VirtualHost"));
 
 	private static final String JDBC_DRIVER = "com.mysql.cj.jdbc.Driver";
 	private static final String JDBC_URL1 = "jdbc:mysql://localhost/";
