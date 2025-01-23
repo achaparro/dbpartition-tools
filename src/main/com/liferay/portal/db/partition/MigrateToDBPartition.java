@@ -34,21 +34,24 @@ public class MigrateToDBPartition {
 	public static void main(String[] args) throws Exception {
 		System.out.println("*** Start migrating companies to DB Partition ***");
 
-		if (args.length != 3) {
-			System.out.println("Database name, user and password are required");
+		if (args.length != 4) {
+			System.out.println("Database name, webId from default company, user and password are required");
 
 			return;
 		}
 
 		_defaultSchemaName = args[0];
+		_defaultWebId = args[1];
 
 		Class.forName(JDBC_DRIVER).newInstance();
 
 		try {
 			_connection = DriverManager.getConnection(
-				JDBC_URL1 + _defaultSchemaName + JDBC_URL2, args[1], args[2]);
+				JDBC_URL1 + _defaultSchemaName + JDBC_URL2, args[2], args[3]);
 
 			List<Long> companyIds = _getNonDefaultCompanyIds();
+
+			_defaultCompanyId = _getDefaultCompanyId();
 
 			for (Long companyId : companyIds) {
 				System.out.println("** Migrating company with id " + companyId);
@@ -56,7 +59,7 @@ public class MigrateToDBPartition {
 				_createSchema(companyId);
 			}
 
-			_moveConfigurationData(companyIds, _getDefaultCompanyId());
+			_moveConfigurationData(companyIds);
 		}
 		finally {
 			if (_connection != null) {
@@ -138,7 +141,7 @@ public class MigrateToDBPartition {
 	}
 
 	private static void _moveConfigurationData(
-			List<Long> companyIds, Long defaultCompanyId)
+			List<Long> companyIds)
 		throws Exception {
 
 		try (PreparedStatement preparedStatement =
@@ -164,9 +167,9 @@ public class MigrateToDBPartition {
 						continue;
 					}
 
-					if (!_isApplicable(scopeConfiguration, defaultCompanyId, _defaultSchemaName)) {
+					if (!_isApplicable(scopeConfiguration, _defaultCompanyId)) {
 						for (Long companyId : companyIds) {
-							if (_isApplicable(scopeConfiguration, companyId, _getSchemaName(companyId))) {
+							if (_isApplicable(scopeConfiguration, companyId)) {
 								_insertConfiguration(companyId, scopeConfiguration);
 
 								break;
@@ -205,7 +208,7 @@ public class MigrateToDBPartition {
 	}
 
 	private static boolean _isApplicable(
-			ScopeConfiguration scopeConfiguration, long companyId, String schemaName)
+			ScopeConfiguration scopeConfiguration, long companyId)
 		throws Exception {
 
 		if (Objects.equals(
@@ -225,7 +228,7 @@ public class MigrateToDBPartition {
 
 			try (PreparedStatement preparedStatement =
 				 _connection.prepareStatement(
-					 "select groupId from " + schemaName + _PERIOD + "Group_ where groupId = ?")) {
+					 "select groupId from " + _getSchemaName(companyId) + _PERIOD + "Group_ where groupId = ?")) {
 
 				preparedStatement.setLong(
 						1, (long)scopeConfiguration.getScopePK());
@@ -310,6 +313,10 @@ public class MigrateToDBPartition {
 	}
 
 	private static String _getSchemaName(long companyId) {
+		if (companyId == _defaultCompanyId) {
+			return _defaultSchemaName;
+		}
+
 		return _SCHEMA_PREFIX + companyId;
 	}
 
@@ -329,18 +336,20 @@ public class MigrateToDBPartition {
 	}
 
 	private static Long _getDefaultCompanyId() throws Exception {
-		try (Statement statement = _connection.createStatement();
-			 ResultSet resultSet = statement.executeQuery(
-					 "select min(companyId) from Company")) {
+		try (PreparedStatement preparedStatement =
+			 _connection.prepareStatement(
+				"select companyId from Company where webId = ?")) {
 
-			List<Long> companyIds = new ArrayList<>();
+			preparedStatement.setString(1, _defaultWebId);
 
-			if (resultSet.next()) {
-				return resultSet.getLong("companyId");
+			try (ResultSet resultSet = preparedStatement.executeQuery()) {
+				if (resultSet.next()) {
+					return resultSet.getLong("companyId");
+				}
 			}
-
-			throw new Exception("Default companyId not found in database");
 		}
+
+		throw new Exception("Default company webId not found in database");
 	}
 
 	private static String _getCreateView(long companyId, String viewName) {
@@ -356,16 +365,17 @@ public class MigrateToDBPartition {
 	}
 
 	private static List<Long> _getNonDefaultCompanyIds() throws Exception {
-		try (Statement statement = _connection.createStatement();
-			 ResultSet resultSet = statement.executeQuery(
-			 	"select companyId from Company where companyId >" +
-					"(select min(companyId) from Company)")
-			) {
+		try (PreparedStatement preparedStatement = _connection.prepareStatement(
+			"select companyId from Company where webId != ?")) {
+
+			preparedStatement.setString(1, _defaultWebId);
 
 			List<Long> companyIds = new ArrayList<>();
 
-			while (resultSet.next()) {
-				companyIds.add(resultSet.getLong("companyId"));
+			try (ResultSet resultSet = preparedStatement.executeQuery()) {
+				while (resultSet.next()) {
+					companyIds.add(resultSet.getLong("companyId"));
+				}
 			}
 
 			return companyIds;
@@ -413,7 +423,11 @@ public class MigrateToDBPartition {
 
 	private static Connection _connection;
 
+	private static Long _defaultCompanyId;
+
 	private static String _defaultSchemaName;
+
+	private static String _defaultWebId;
 
 	private static final Set<String> _controlTableNames = new HashSet<>(
 		Arrays.asList(
