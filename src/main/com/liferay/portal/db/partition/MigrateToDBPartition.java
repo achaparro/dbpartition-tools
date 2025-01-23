@@ -59,6 +59,7 @@ public class MigrateToDBPartition {
 				_createSchema(companyId);
 			}
 
+			System.out.println("** Migrating configurations");
 			_moveConfigurationData(companyIds);
 		}
 		finally {
