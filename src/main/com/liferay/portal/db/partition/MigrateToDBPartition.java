@@ -12,17 +12,19 @@ package main.com.liferay.portal.db.partition; /**
  * details.
  */
 
+import main.com.liferay.portal.db.partition.configuration.ConfigurationProperties;
+import main.com.liferay.portal.db.partition.configuration.ConfigurationHandler;
+import main.com.liferay.portal.db.partition.util.GetterUtil;
+
+import java.io.ByteArrayInputStream;
+import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @author Alberto Chaparro
@@ -53,6 +55,8 @@ public class MigrateToDBPartition {
 
 				_createSchema(companyId);
 			}
+
+			_moveConfigurationData(companyIds, _getDefaultCompanyId());
 		}
 		finally {
 			if (_connection != null) {
@@ -108,6 +112,10 @@ public class MigrateToDBPartition {
 					statement.executeUpdate(
 						_getCreateTable(companyId, tableName));
 
+					if (tableName.equals("Configuration_")) {
+						continue;
+					}
+
 					_moveCompanyData(companyId, tableName, statement);
 				}
 			}
@@ -127,6 +135,49 @@ public class MigrateToDBPartition {
 		}
 
 		_moveData(companyId, false, tableName, statement, whereClause);
+	}
+
+	private static void _moveConfigurationData(
+			List<Long> companyIds, Long defaultCompanyId)
+		throws Exception {
+
+		try (PreparedStatement preparedStatement =
+			 _connection.prepareStatement(
+			  "select configurationId, dictionary from " +
+				  _defaultSchemaName + _PERIOD + "Configuration_");
+			 ResultSet resultSet = preparedStatement.executeQuery()) {
+
+			while (resultSet.next()) {
+				ScopeConfiguration scopeConfiguration =
+					_getScopeConfiguration(
+						resultSet.getString(1), resultSet.getString(2));
+
+				if (scopeConfiguration != null) {
+					if (Objects.equals(
+							scopeConfiguration.getScope(),
+							ConfigurationProperties.Scope.PORTLET_INSTANCE)) {
+
+						for (Long companyId : companyIds) {
+							_insertConfiguration(companyId, scopeConfiguration);
+						}
+
+						continue;
+					}
+
+					if (!_isApplicable(scopeConfiguration, defaultCompanyId, _defaultSchemaName)) {
+						for (Long companyId : companyIds) {
+							if (_isApplicable(scopeConfiguration, companyId, _getSchemaName(companyId))) {
+								_insertConfiguration(companyId, scopeConfiguration);
+
+								break;
+							}
+						}
+
+						_removeConfiguration(scopeConfiguration);
+					}
+				}
+			}
+		}
 	}
 
 	private static void _moveData(
@@ -153,8 +204,72 @@ public class MigrateToDBPartition {
 		}
 	}
 
-	private static boolean _isControlTable(String tableName) {
+	private static boolean _isApplicable(
+			ScopeConfiguration scopeConfiguration, long companyId, String schemaName)
+		throws Exception {
 
+		if (Objects.equals(
+			scopeConfiguration.getScope(),
+			ConfigurationProperties.Scope.COMPANY)) {
+
+			if (companyId == (long)scopeConfiguration.getScopePK()) {
+				return true;
+			}
+
+			return false;
+		}
+
+		if (Objects.equals(
+			scopeConfiguration.getScope(),
+			ConfigurationProperties.Scope.GROUP)) {
+
+			try (PreparedStatement preparedStatement =
+				 _connection.prepareStatement(
+					 "select groupId from " + schemaName + _PERIOD + "Group_ where groupId = ?")) {
+
+				preparedStatement.setLong(
+						1, (long)scopeConfiguration.getScopePK());
+
+				try (ResultSet resultSet = preparedStatement.executeQuery()) {
+					if (resultSet.next()) {
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
+		return true;
+	}
+
+	private static void _insertConfiguration(Long companyId, ScopeConfiguration scopeConfiguration)
+		throws Exception {
+
+		try (PreparedStatement preparedStatement = _connection.prepareStatement(
+			"insert into " + _getSchemaName(companyId) + _PERIOD + " Configuration_ " +
+			"(configurationId, dictionary) values (?, ?)")) {
+
+			preparedStatement.setString(1, scopeConfiguration.getConfigurationId());
+			preparedStatement.setString(2, scopeConfiguration.getDictionary());
+
+			preparedStatement.executeUpdate();
+		}
+	}
+
+	private static void _removeConfiguration(ScopeConfiguration scopeConfiguration)
+		throws Exception {
+
+		try (PreparedStatement preparedStatement = _connection.prepareStatement(
+				"delete from " + _defaultSchemaName + _PERIOD + " Configuration_ where configurationId = ?")) {
+
+			preparedStatement.setString(1, scopeConfiguration.getConfigurationId());
+
+			preparedStatement.executeUpdate();
+		}
+	}
+
+	private static boolean _isControlTable(String tableName) {
 		if (_controlTableNames.contains(tableName) ||
 			tableName.startsWith("QUARTZ_")) {
 
@@ -213,6 +328,21 @@ public class MigrateToDBPartition {
 		}
 	}
 
+	private static Long _getDefaultCompanyId() throws Exception {
+		try (Statement statement = _connection.createStatement();
+			 ResultSet resultSet = statement.executeQuery(
+					 "select min(companyId) from Company")) {
+
+			List<Long> companyIds = new ArrayList<>();
+
+			if (resultSet.next()) {
+				return resultSet.getLong("companyId");
+			}
+
+			throw new Exception("Default companyId not found in database");
+		}
+	}
+
 	private static String _getCreateView(long companyId, String viewName) {
 		return "create or replace view " + _getSchemaName(companyId) + _PERIOD +
 		   viewName + " as select * from " + _defaultSchemaName + _PERIOD +
@@ -242,6 +372,45 @@ public class MigrateToDBPartition {
 		}
 	}
 
+	private static ScopeConfiguration _getScopeConfiguration(
+			String configurationId, String dictionary)
+		throws Exception {
+
+		Dictionary<String, String> dictionaryMap = ConfigurationHandler.read(
+			new ByteArrayInputStream(
+				dictionary.getBytes("UTF-8")));
+
+		Object value = dictionaryMap.get(
+			ConfigurationProperties.Scope.COMPANY.getPropertyKey());
+
+		if (value != null) {
+			return new ScopeConfiguration(
+				configurationId, dictionary, GetterUtil.getLong(value),
+				ConfigurationProperties.Scope.COMPANY);
+		}
+
+		value = dictionaryMap.get(
+			ConfigurationProperties.Scope.GROUP.getPropertyKey());
+
+		if (value != null) {
+			return new ScopeConfiguration(
+				configurationId, dictionary, GetterUtil.getLong(value),
+				ConfigurationProperties.Scope.GROUP);
+		}
+
+		value = dictionaryMap.get(
+			ConfigurationProperties.Scope.PORTLET_INSTANCE.
+				getPropertyKey());
+
+		if (value != null) {
+			return new ScopeConfiguration(
+				configurationId, dictionary, GetterUtil.getString(value),
+				ConfigurationProperties.Scope.PORTLET_INSTANCE);
+		}
+
+		return null;
+	}
+
 	private static Connection _connection;
 
 	private static String _defaultSchemaName;
@@ -257,4 +426,39 @@ public class MigrateToDBPartition {
 	private static final String _PERIOD = ".";
 
 	private static final String _SCHEMA_PREFIX = "lpartition_";
+
+	private static class ScopeConfiguration {
+
+		public ScopeConfiguration(
+				String configurationId, String dictionary, Serializable scopePK,
+				ConfigurationProperties.Scope scope) {
+
+			_configurationId = configurationId;
+			_dictionary = dictionary;
+			_scopePK = scopePK;
+			_scope = scope;
+		}
+
+		public String getConfigurationId() {
+			return _configurationId;
+		}
+
+		public String getDictionary() {
+			return _dictionary;
+		}
+
+		public ConfigurationProperties.Scope getScope() {
+			return _scope;
+		}
+
+		public Object getScopePK() {
+			return _scopePK;
+		}
+
+		private final String _configurationId;
+		private final String _dictionary;
+		private final ConfigurationProperties.Scope _scope;
+		private final Object _scopePK;
+
+	}
 }
