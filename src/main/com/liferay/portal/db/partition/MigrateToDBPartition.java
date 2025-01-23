@@ -127,199 +127,6 @@ public class MigrateToDBPartition {
 		}
 	}
 
-	private static void _moveCompanyData(
-		long companyId, String tableName, Statement statement)
-		throws Exception {
-
-		String whereClause = "";
-
-		if (_hasColumn(tableName, "companyId")) {
-			whereClause = " where companyId = " + companyId;
-		}
-
-		_moveData(companyId, false, tableName, statement, whereClause);
-	}
-
-	private static void _moveConfigurationData(
-			List<Long> companyIds)
-		throws Exception {
-
-		try (PreparedStatement preparedStatement =
-			 _connection.prepareStatement(
-			  "select configurationId, dictionary from " +
-				  _defaultSchemaName + _PERIOD + "Configuration_");
-			 ResultSet resultSet = preparedStatement.executeQuery()) {
-
-			while (resultSet.next()) {
-				ScopeConfiguration scopeConfiguration =
-					_getScopeConfiguration(
-						resultSet.getString(1), resultSet.getString(2));
-
-				if (scopeConfiguration != null) {
-					if (Objects.equals(
-							scopeConfiguration.getScope(),
-							ConfigurationProperties.Scope.PORTLET_INSTANCE)) {
-
-						for (Long companyId : companyIds) {
-							_insertConfiguration(companyId, scopeConfiguration);
-						}
-
-						continue;
-					}
-
-					if (!_isApplicable(scopeConfiguration, _defaultCompanyId)) {
-						for (Long companyId : companyIds) {
-							if (_isApplicable(scopeConfiguration, companyId)) {
-								_insertConfiguration(companyId, scopeConfiguration);
-
-								break;
-							}
-						}
-
-						_removeConfiguration(scopeConfiguration);
-					}
-				}
-			}
-		}
-	}
-
-	private static void _moveData(
-		long companyId, boolean removeTable, String tableName, Statement statement, String whereClause)
-		throws Exception {
-
-		statement.executeUpdate(
-		 "insert " + _getSchemaName(companyId) + _PERIOD + tableName +
-			" select * from " + _defaultSchemaName + _PERIOD + tableName +
-			whereClause);
-
-		if (removeTable) {
-			statement.executeUpdate(
-			 "drop table if exists " + _defaultSchemaName + _PERIOD +
-				tableName);
-
-			return;
-		}
-
-		if (!whereClause.isEmpty()) {
-			statement.executeUpdate(
-			 "delete from " + _defaultSchemaName + _PERIOD + tableName +
-				whereClause);
-		}
-	}
-
-	private static boolean _isApplicable(
-			ScopeConfiguration scopeConfiguration, long companyId)
-		throws Exception {
-
-		if (Objects.equals(
-			scopeConfiguration.getScope(),
-			ConfigurationProperties.Scope.COMPANY)) {
-
-			if (companyId == (long)scopeConfiguration.getScopePK()) {
-				return true;
-			}
-
-			return false;
-		}
-
-		if (Objects.equals(
-			scopeConfiguration.getScope(),
-			ConfigurationProperties.Scope.GROUP)) {
-
-			try (PreparedStatement preparedStatement =
-				 _connection.prepareStatement(
-					 "select groupId from " + _getSchemaName(companyId) + _PERIOD + "Group_ where groupId = ?")) {
-
-				preparedStatement.setLong(
-						1, (long)scopeConfiguration.getScopePK());
-
-				try (ResultSet resultSet = preparedStatement.executeQuery()) {
-					if (resultSet.next()) {
-						return true;
-					}
-				}
-			}
-
-			return false;
-		}
-
-		return true;
-	}
-
-	private static void _insertConfiguration(Long companyId, ScopeConfiguration scopeConfiguration)
-		throws Exception {
-
-		try (PreparedStatement preparedStatement = _connection.prepareStatement(
-			"insert into " + _getSchemaName(companyId) + _PERIOD + " Configuration_ " +
-			"(configurationId, dictionary) values (?, ?)")) {
-
-			preparedStatement.setString(1, scopeConfiguration.getConfigurationId());
-			preparedStatement.setString(2, scopeConfiguration.getDictionary());
-
-			preparedStatement.executeUpdate();
-		}
-	}
-
-	private static void _removeConfiguration(ScopeConfiguration scopeConfiguration)
-		throws Exception {
-
-		try (PreparedStatement preparedStatement = _connection.prepareStatement(
-				"delete from " + _defaultSchemaName + _PERIOD + " Configuration_ where configurationId = ?")) {
-
-			preparedStatement.setString(1, scopeConfiguration.getConfigurationId());
-
-			preparedStatement.executeUpdate();
-		}
-	}
-
-	private static boolean _isControlTable(String tableName) {
-		if (_controlTableNames.contains(tableName) ||
-			tableName.startsWith("QUARTZ_")) {
-
-			return true;
-		}
-
-		return false;
-	}
-
-	private static boolean _isObjectTable(List<Long> companyIds, String tableName) {
-		for (long companyId : companyIds) {
-			if (tableName.endsWith("_x_" + companyId) ||
-					tableName.startsWith("L_" + companyId + "_") ||
-					tableName.startsWith("O_" + companyId + "_")) {
-
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private static boolean _hasColumn(String tableName, String columnName)
-		throws Exception {
-
-		DatabaseMetaData databaseMetaData = _connection.getMetaData();
-
-		try (ResultSet rs = databaseMetaData.getColumns(
-			_connection.getCatalog(), _connection.getSchema(), tableName,
-			columnName)) {
-
-			if (!rs.next()) {
-				return false;
-			}
-
-			return true;
-		}
-	}
-
-	private static String _getSchemaName(long companyId) {
-		if (companyId == _defaultCompanyId) {
-			return _defaultSchemaName;
-		}
-
-		return _SCHEMA_PREFIX + companyId;
-	}
-
 	private static List<Long> _getCompanyIds() throws Exception {
 		try (Statement statement = _connection.createStatement();
 			 ResultSet resultSet = statement.executeQuery(
@@ -333,6 +140,18 @@ public class MigrateToDBPartition {
 
 			return companyIds;
 		}
+	}
+
+	private static String _getCreateTable(long companyId, String tableName) {
+		return "create table if not exists " + _getSchemaName(companyId) +
+				_PERIOD + tableName + " like " + _defaultSchemaName + _PERIOD +
+				tableName;
+	}
+
+	private static String _getCreateView(long companyId, String viewName) {
+		return "create or replace view " + _getSchemaName(companyId) + _PERIOD +
+				viewName + " as select * from " + _defaultSchemaName + _PERIOD +
+				viewName;
 	}
 
 	private static Long _getDefaultCompanyId() throws Exception {
@@ -352,18 +171,6 @@ public class MigrateToDBPartition {
 		throw new Exception("Default company webId not found in database");
 	}
 
-	private static String _getCreateView(long companyId, String viewName) {
-		return "create or replace view " + _getSchemaName(companyId) + _PERIOD +
-		   viewName + " as select * from " + _defaultSchemaName + _PERIOD +
-		   viewName;
-	}
-
-	private static String _getCreateTable(long companyId, String tableName) {
-		return "create table if not exists " + _getSchemaName(companyId) +
-			_PERIOD + tableName + " like " + _defaultSchemaName + _PERIOD +
-			tableName;
-	}
-
 	private static List<Long> _getNonDefaultCompanyIds() throws Exception {
 		try (PreparedStatement preparedStatement = _connection.prepareStatement(
 			"select companyId from Company where webId != ?")) {
@@ -380,6 +187,14 @@ public class MigrateToDBPartition {
 
 			return companyIds;
 		}
+	}
+
+	private static String _getSchemaName(long companyId) {
+		if (companyId == _defaultCompanyId) {
+			return _defaultSchemaName;
+		}
+
+		return _SCHEMA_PREFIX + companyId;
 	}
 
 	private static ScopeConfiguration _getScopeConfiguration(
@@ -419,6 +234,191 @@ public class MigrateToDBPartition {
 		}
 
 		return null;
+	}
+
+	private static boolean _hasColumn(String tableName, String columnName)
+			throws Exception {
+
+		DatabaseMetaData databaseMetaData = _connection.getMetaData();
+
+		try (ResultSet rs = databaseMetaData.getColumns(
+				_connection.getCatalog(), _connection.getSchema(), tableName,
+				columnName)) {
+
+			if (!rs.next()) {
+				return false;
+			}
+
+			return true;
+		}
+	}
+
+	private static void _insertConfiguration(Long companyId, ScopeConfiguration scopeConfiguration)
+			throws Exception {
+
+		try (PreparedStatement preparedStatement = _connection.prepareStatement(
+				"insert into " + _getSchemaName(companyId) + _PERIOD + " Configuration_ " +
+						"(configurationId, dictionary) values (?, ?)")) {
+
+			preparedStatement.setString(1, scopeConfiguration.getConfigurationId());
+			preparedStatement.setString(2, scopeConfiguration.getDictionary());
+
+			preparedStatement.executeUpdate();
+		}
+	}
+
+	private static boolean _isApplicable(
+			long companyId, ScopeConfiguration scopeConfiguration)
+		throws Exception {
+
+		if (Objects.equals(
+				scopeConfiguration.getScope(),
+				ConfigurationProperties.Scope.COMPANY)) {
+
+			if (companyId == (long)scopeConfiguration.getScopePK()) {
+				return true;
+			}
+
+			return false;
+		}
+
+		if (Objects.equals(
+				scopeConfiguration.getScope(),
+				ConfigurationProperties.Scope.GROUP)) {
+
+			try (PreparedStatement preparedStatement =
+						 _connection.prepareStatement(
+								 "select groupId from " + _getSchemaName(companyId) + _PERIOD + "Group_ where groupId = ?")) {
+
+				preparedStatement.setLong(
+						1, (long)scopeConfiguration.getScopePK());
+
+				try (ResultSet resultSet = preparedStatement.executeQuery()) {
+					if (resultSet.next()) {
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
+		return true;
+	}
+
+	private static boolean _isControlTable(String tableName) {
+		if (_controlTableNames.contains(tableName) ||
+				tableName.startsWith("QUARTZ_")) {
+
+			return true;
+		}
+
+		return false;
+	}
+
+	private static boolean _isObjectTable(List<Long> companyIds, String tableName) {
+		for (long companyId : companyIds) {
+			if (tableName.endsWith("_x_" + companyId) ||
+					tableName.startsWith("L_" + companyId + "_") ||
+					tableName.startsWith("O_" + companyId + "_")) {
+
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static void _moveCompanyData(
+			long companyId, String tableName, Statement statement)
+			throws Exception {
+
+		String whereClause = "";
+
+		if (_hasColumn(tableName, "companyId")) {
+			whereClause = " where companyId = " + companyId;
+		}
+
+		_moveData(companyId, false, tableName, statement, whereClause);
+	}
+
+	private static void _moveConfigurationData(
+			List<Long> companyIds)
+			throws Exception {
+
+		try (PreparedStatement preparedStatement =
+					 _connection.prepareStatement(
+							 "select configurationId, dictionary from " +
+									 _defaultSchemaName + _PERIOD + "Configuration_");
+			 ResultSet resultSet = preparedStatement.executeQuery()) {
+
+			while (resultSet.next()) {
+				ScopeConfiguration scopeConfiguration =
+						_getScopeConfiguration(
+								resultSet.getString(1), resultSet.getString(2));
+
+				if (scopeConfiguration != null) {
+					if (Objects.equals(
+							scopeConfiguration.getScope(),
+							ConfigurationProperties.Scope.PORTLET_INSTANCE)) {
+
+						for (Long companyId : companyIds) {
+							_insertConfiguration(companyId, scopeConfiguration);
+						}
+
+						continue;
+					}
+
+					if (!_isApplicable(_defaultCompanyId, scopeConfiguration)) {
+						for (Long companyId : companyIds) {
+							if (_isApplicable(companyId, scopeConfiguration)) {
+								_insertConfiguration(companyId, scopeConfiguration);
+
+								break;
+							}
+						}
+
+						_removeConfiguration(scopeConfiguration);
+					}
+				}
+			}
+		}
+	}
+
+	private static void _moveData(
+			long companyId, boolean removeTable, String tableName, Statement statement, String whereClause)
+			throws Exception {
+
+		statement.executeUpdate(
+				"insert " + _getSchemaName(companyId) + _PERIOD + tableName +
+						" select * from " + _defaultSchemaName + _PERIOD + tableName +
+						whereClause);
+
+		if (removeTable) {
+			statement.executeUpdate(
+					"drop table if exists " + _defaultSchemaName + _PERIOD +
+							tableName);
+
+			return;
+		}
+
+		if (!whereClause.isEmpty()) {
+			statement.executeUpdate(
+					"delete from " + _defaultSchemaName + _PERIOD + tableName +
+							whereClause);
+		}
+	}
+
+	private static void _removeConfiguration(ScopeConfiguration scopeConfiguration)
+			throws Exception {
+
+		try (PreparedStatement preparedStatement = _connection.prepareStatement(
+				"delete from " + _defaultSchemaName + _PERIOD + " Configuration_ where configurationId = ?")) {
+
+			preparedStatement.setString(1, scopeConfiguration.getConfigurationId());
+
+			preparedStatement.executeUpdate();
+		}
 	}
 
 	private static Connection _connection;
@@ -475,4 +475,5 @@ public class MigrateToDBPartition {
 		private final Object _scopePK;
 
 	}
+
 }
