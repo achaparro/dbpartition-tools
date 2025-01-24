@@ -121,6 +121,10 @@ public class MigrateToDBPartition {
 					}
 
 					_moveCompanyData(companyId, tableName, statement);
+
+					if (tableName.equals("DLFileEntryType")) {
+						_moveData(companyId, false, tableName, statement, DLFILEENTRYTYPE_WHERECLAUSE);
+					}
 				}
 			}
 
@@ -403,7 +407,7 @@ public class MigrateToDBPartition {
 			return;
 		}
 
-		if (!whereClause.isEmpty()) {
+		if (!whereClause.isEmpty() && !whereClause.equals(DLFILEENTRYTYPE_WHERECLAUSE)) {
 			statement.executeUpdate(
 					"delete from " + _defaultSchemaName + _PERIOD + tableName +
 							whereClause);
@@ -433,6 +437,8 @@ public class MigrateToDBPartition {
 	private static final Set<String> _controlTableNames = new HashSet<>(
 		Arrays.asList(
 			"Company", "Release_", "ServiceComponent", "VirtualHost"));
+
+	private static final String DLFILEENTRYTYPE_WHERECLAUSE = " where companyId = 0";
 
 	private static final String JDBC_DRIVER = "com.mysql.cj.jdbc.Driver";
 	private static final String JDBC_URL1 = "jdbc:mysql://localhost/";
