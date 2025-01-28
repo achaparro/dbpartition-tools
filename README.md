@@ -23,7 +23,7 @@ This tool migrates your companies from a regular environment to a DB Partition e
 
 - Example of usage:
 ```
-java -jar migrate-to-dbpartition.jar {current_schema_name} {db_user} {db_password}
+java -jar migrate-to-dbpartition.jar {current_schema_name} {default_company_web_id} {db_user} {db_password}
 ```
 
 ## validate-schemas.jar
