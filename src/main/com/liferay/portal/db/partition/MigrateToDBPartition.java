@@ -59,8 +59,8 @@ public class MigrateToDBPartition {
 				_createSchema(companyId);
 			}
 
-			System.out.println("** Migrating configurations");
 			_moveConfigurationData(companyIds);
+			System.out.println("Configuration migrated");
 		}
 		finally {
 			if (_connection != null) {
